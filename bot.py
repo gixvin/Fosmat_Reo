@@ -32,14 +32,22 @@ def start(message):
         return
 
     kb = types.InlineKeyboardMarkup()
+
     if works_bot:
+        # Когда бот работает — показываем кнопку сделать заказ
         kb.add(types.InlineKeyboardButton("📦 Сделать заказ", callback_data="order"))
+    else:
+        # Когда техработы — показываем НЕАКТИВНУЮ кнопку с сообщением
+        kb.add(types.InlineKeyboardButton("⚠️ Бот на техработах", callback_data="disabled"))
+
+    # Кнопки, которые всегда есть
     kb.add(
         types.InlineKeyboardButton("📝 Отзывы", url="https://t.me/BetaForm_01"),
-        types.InlineKeyboardButton("📢 Канал", url="https://t.me/BetaForm_01")
+        types.InlineKeyboardButton("📢 Канал", url="https://t.me/BetaForm_01"),
+        types.InlineKeyboardButton("👨‍💻 Разработчик", url="https://t.me/klas03")
     )
-    kb.add(types.InlineKeyboardButton("👨‍💻 Разработчик", url="https://t.me/klas03"))
 
+    # Админ меню — только для админов
     if cid in ADMINS:
         status_text = "ВЫКЛ" if not works_bot else "ВКЛ"
         kb.add(types.InlineKeyboardButton(f"🔐 Админ меню (бот {status_text})", callback_data="admin_menu"))
@@ -219,6 +227,9 @@ def log_order(user, service_name):
     except Exception as e:
         print("Ошибка записи в лог:", e)
 
+@bot.callback_query_handler(func=lambda call: call.data == "disabled")
+def disabled_notice(call):
+    bot.answer_callback_query(call.id, "Бот сейчас на технических работах. Заказы временно недоступны.", show_alert=True)
 
 print("🤖 Бот запущен")
 bot.infinity_polling()
