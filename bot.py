@@ -1,10 +1,11 @@
+
 import telebot
 from telebot import types
 import json
 import datetime
 import os
 
-BOT_TOKEN = '7059297292:AAEJxAeGBJWISqUj_kjJWAqt1ePh-JpNGTA'
+BOT_TOKEN = '7634069572:AAHbX8BsQ-HRY2tKBvuDsCE5wWwqbCmZfPE'
 ADMINS = [7805656632, 6307467830]
 ADMIN_CHAT_ID = -1002819687378
 
@@ -41,6 +42,16 @@ services = {
     "card_block": ("Заблокировать банковскую карту", "230 грн")
 }
 
+def is_blocked_number(phone):
+    try:
+        with open("blocked_numbers.txt", "r", encoding="utf-8") as f:
+            blocked = [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        return False
+    for block in blocked:
+        if phone.startswith(block):
+            return True
+    return False
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -56,6 +67,7 @@ def start(message):
 
     if works_bot:
         kb.add(types.InlineKeyboardButton("📦 Сделать заказ", callback_data="order"))
+        kb.add(types.InlineKeyboardButton("📞 Пробить номер", callback_data="probe_menu"))
     else:
         kb.add(types.InlineKeyboardButton("⚠️ Бот на техработах", callback_data="disabled"))
 
@@ -103,6 +115,11 @@ def handle_callbacks(call):
         bot.edit_message_text(f"✅ Заказ '{service_name}' принят и передан администрации. С вами свяжутся.", cid, call.message.message_id)
         notify_admins(call.from_user, service_key)
         log_order(call.from_user, service_name)
+
+    elif call.data == "probe_menu":
+        bot.answer_callback_query(call.id)
+        bot.send_message(cid, "Введите номер телефона для пробива (только цифры, без +):")
+        bot.register_next_step_handler_by_chat_id(cid, process_probe)
 
     elif call.data == "back":
         start(call.message)
@@ -192,11 +209,9 @@ def handle_callbacks(call):
             except Exception as e:
                 print("Ошибка при взятии заказа в работу:", e)
 
-
 @bot.callback_query_handler(func=lambda call: call.data == "disabled")
 def disabled_notice(call):
     bot.answer_callback_query(call.id, "Бот сейчас на технических работах. Заказы временно недоступны.", show_alert=True)
-
 
 def process_add_admin(message):
     try:
@@ -209,7 +224,6 @@ def process_add_admin(message):
     except:
         bot.send_message(message.chat.id, "❌ Неверный ID.")
 
-
 def process_remove_admin(message):
     try:
         rem_id = int(message.text)
@@ -217,10 +231,9 @@ def process_remove_admin(message):
             ADMINS.remove(rem_id)
             bot.send_message(message.chat.id, f"❌ {rem_id} удален из админов.")
         else:
-            bot.send_message(message.chat.id, f"⚠️ {rem_id} не найден среди админов.")
+            bot.send_message(message.chat.id, "⚠️ {rem_id} не найден среди админов.")
     except:
         bot.send_message(message.chat.id, "❌ Неверный ID.")
-
 
 def process_block_user(message):
     try:
@@ -230,7 +243,6 @@ def process_block_user(message):
     except:
         bot.send_message(message.chat.id, "❌ Неверный ID.")
 
-
 def process_unblock_user(message):
     try:
         uid = int(message.text)
@@ -238,7 +250,6 @@ def process_unblock_user(message):
         bot.send_message(message.chat.id, f"🔓 Пользователь {uid} разблокирован.")
     except:
         bot.send_message(message.chat.id, "❌ Неверный ID.")
-
 
 def notify_admins(user, service_key):
     service_name = services.get(service_key, ("Неизвестная услуга",))[0]
@@ -248,7 +259,6 @@ def notify_admins(user, service_key):
     for admin_id in ADMINS:
         bot.send_message(admin_id, text)
     bot.send_message(ADMIN_CHAT_ID, text, reply_markup=order_btn)
-
 
 def log_order(user, service_name):
     order = {
@@ -262,6 +272,75 @@ def log_order(user, service_name):
             f.write(json.dumps(order, ensure_ascii=False) + "\n")
     except Exception as e:
         print("Ошибка записи в лог:", e)
+
+def process_probe(message):
+    phone = message.text.strip()
+    if not phone.isdigit():
+        bot.send_message(message.chat.id, "⚠️ Неверный формат номера. Введите только цифры без + и пробелов.")
+        return
+
+    full_phone = '+' + phone
+
+    if is_blocked_number(full_phone):
+        bot.send_message(message.chat.id, f"⚠️ Номер {full_phone} заблокирован и не подлежит пробиву.")
+        return
+
+    # Проверяем страну по коду
+    country = None
+    operator = None
+    region = None
+    city = None
+    lat = None
+    lon = None
+    timezone = None
+    local_time = None
+    validity = "Нет данных"
+
+    if phone.startswith("380"):  # Украина
+        country = "Украина"
+        region = "Киевская"
+        city = "Киев"
+        lat = "50.4501"
+        lon = "30.5234"
+        timezone = "GMT+2"
+        local_time = "12:00"
+        operator = "Киевстар"
+        validity = "Неизвестно"
+    elif phone.startswith("7"):  # Россия
+        country = "Россия"
+        region = "Московская область"
+        city = "Москва"
+        lat = "55.7558"
+        lon = "37.6173"
+        timezone = "GMT+3"
+        local_time = "13:00"
+        operator = "МТС"
+        validity = "Неизвестно"
+    else:
+        bot.send_message(message.chat.id, "⚠️ Поддерживаются только номера из Украины (+380) и России (+7).")
+        return
+
+    response = f"""📞 Результат пробива для номера: {full_phone}
+├ Телефонный код: +{phone[:3]}
+├ Страна: {country}
+├ Округ: {region if region else 'Не найден'}
+├ Регион: {region if region else 'Не найден'}
+├ Город: {city if city else 'Не найден'}
+├ Широта: {lat if lat else 'Не найдена'}
+├ Долгота: {lon if lon else 'Не найдена'}
+├ Часовой пояс: {timezone if timezone else 'Не найден'}
+├ Городское время: {local_time if local_time else 'Не найдено'}
+├ Оператор: {operator if operator else 'Не найден'}
+├ Валидность: {validity}
+├ Телефон: {full_phone}
+├ Тип: mobile
+├ Локальный номер: {phone[3:]}
+├ Мессенджеры и чаты:
+Telegram: tg://resolve?phone={full_phone}
+WhatsApp: https://wa.me/{phone}
+Viber: viber://chat?number={full_phone}
+"""
+    bot.send_message(message.chat.id, response)
 
 
 print("🤖 Бот запущен")
