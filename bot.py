@@ -2,6 +2,7 @@ import telebot
 from telebot import types
 import json
 import datetime
+import os
 
 BOT_TOKEN = '7059297292:AAEJxAeGBJWISqUj_kjJWAqt1ePh-JpNGTA'
 ADMINS = [7805656632, 6307467830]
@@ -13,7 +14,20 @@ works_bot = True  # True - бот работает, False - техработы
 user_orders = {}
 blocked_users = set()
 
-# Сервисы с ключами без пробелов и спецсимволов
+USERS_FILE = "users.json"
+
+def load_users():
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            return set(json.load(f))
+    return set()
+
+def save_users(users):
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(list(users), f, ensure_ascii=False)
+
+all_users = load_users()
+
 services = {
     "account_delete": ("Снести аккаунт", "100 грн"),
     "deanon": ("Деанон", "70 грн"),
@@ -31,23 +45,22 @@ def start(message):
         bot.send_message(cid, "⛔ Вы заблокированы.")
         return
 
+    all_users.add(cid)
+    save_users(all_users)
+
     kb = types.InlineKeyboardMarkup()
 
     if works_bot:
-        # Когда бот работает — показываем кнопку сделать заказ
         kb.add(types.InlineKeyboardButton("📦 Сделать заказ", callback_data="order"))
     else:
-        # Когда техработы — показываем НЕАКТИВНУЮ кнопку с сообщением
         kb.add(types.InlineKeyboardButton("⚠️ Бот на техработах", callback_data="disabled"))
 
-    # Кнопки, которые всегда есть
     kb.add(
         types.InlineKeyboardButton("📝 Отзывы", url="https://t.me/BetaForm_01"),
         types.InlineKeyboardButton("📢 Канал", url="https://t.me/BetaForm_01"),
         types.InlineKeyboardButton("👨‍💻 Разработчик", url="https://t.me/klas03")
     )
 
-    # Админ меню — только для админов
     if cid in ADMINS:
         status_text = "ВЫКЛ" if not works_bot else "ВКЛ"
         kb.add(types.InlineKeyboardButton(f"🔐 Админ меню (бот {status_text})", callback_data="admin_menu"))
@@ -105,11 +118,25 @@ def handle_callbacks(call):
 
     elif call.data == "toggle_bot" and cid in ADMINS:
         works_bot = not works_bot
+
+        if not works_bot:
+            for uid in all_users:
+                try:
+                    bot.send_message(uid, "⚠️ Бот ушёл на технические работы. Скоро вернёмся!")
+                except Exception as e:
+                    print(f"❌ Не удалось отправить сообщение {uid}: {e}")
+        else:
+            for uid in all_users:
+                try:
+                    bot.send_message(uid, "✅ Бот снова работает! Заходи и заказывай.")
+                except Exception as e:
+                    print(f"❌ Не удалось отправить сообщение {uid}: {e}")
+
         status = "включен" if works_bot else "выключен"
         bot.answer_callback_query(call.id, f"Бот теперь {status}.")
-        # обновляем меню
-        kb = types.InlineKeyboardMarkup(row_width=2)
+
         status_text = "ВЫКЛ" if not works_bot else "ВКЛ"
+        kb = types.InlineKeyboardMarkup(row_width=2)
         kb.add(
             types.InlineKeyboardButton("📥 Заказы", callback_data="view_orders"),
             types.InlineKeyboardButton("➕ Выдать админа", callback_data="add_admin"),
@@ -160,6 +187,11 @@ def handle_callbacks(call):
                 bot.send_message(uid, f"👨‍💼 Ваш заказ '{service_name}' принят в работу администратором. Он скоро с вами свяжется.")
             except Exception as e:
                 print("Ошибка при взятии заказа в работу:", e)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "disabled")
+def disabled_notice(call):
+    bot.answer_callback_query(call.id, "Бот сейчас на технических работах. Заказы временно недоступны.", show_alert=True)
 
 
 def process_add_admin(message):
@@ -227,9 +259,6 @@ def log_order(user, service_name):
     except Exception as e:
         print("Ошибка записи в лог:", e)
 
-@bot.callback_query_handler(func=lambda call: call.data == "disabled")
-def disabled_notice(call):
-    bot.answer_callback_query(call.id, "Бот сейчас на технических работах. Заказы временно недоступны.", show_alert=True)
 
 print("🤖 Бот запущен")
 bot.infinity_polling()
