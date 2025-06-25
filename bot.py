@@ -1,17 +1,17 @@
+
 import telebot
 from telebot import types
 import json
 import datetime
 import os
 
-BOT_TOKEN = '7059297292:AAEJxAeGBJWISqUj_kjJWAqt1ePh-JpNGTA'
+BOT_TOKEN = '7059297292:AAGIvG0yJ0qAGgrXejCewDUKAVwXYcofwFk'
 ADMINS = [7805656632, 6307467830]
 ADMIN_CHAT_ID = -1002819687378
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
 works_bot = True  # True - бот работает, False - техработы
-works_probe = True  # True - пробив номеров включен
 user_orders = {}
 blocked_users = set()
 
@@ -64,6 +64,7 @@ def start(message):
     save_users(all_users)
 
     kb = types.InlineKeyboardMarkup()
+
     if works_bot:
         kb.add(types.InlineKeyboardButton("📦 Сделать заказ", callback_data="order"))
         kb.add(types.InlineKeyboardButton("📞 Пробить номер", callback_data="probe_menu"))
@@ -79,20 +80,20 @@ def start(message):
     if cid in ADMINS:
         status_text = "ВЫКЛ" if not works_bot else "ВКЛ"
         kb.add(types.InlineKeyboardButton(f"🔐 Админ меню (бот {status_text})", callback_data="admin_menu"))
-        # Добавляем кнопку включения/выключения пробива в админ меню (главное меню)
-        kb.add(types.InlineKeyboardButton(f"⚙️ Пробив номеров {'ВКЛ' if works_probe else 'ВЫКЛ'}", callback_data="toggle_probe"))
 
     bot.send_message(cid, "Привет! Выбери пункт меню:", reply_markup=kb)
 
+
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
-    global works_bot, works_probe
+    global works_bot
     cid = call.message.chat.id
 
     if call.data == "order":
         if not works_bot and cid not in ADMINS:
             bot.answer_callback_query(call.id, "Бот сейчас на технических работах.", show_alert=True)
             return
+
         kb = types.InlineKeyboardMarkup()
         for key, (name, price) in services.items():
             kb.add(types.InlineKeyboardButton(f"{name} – {price}", callback_data=f"service_{key}"))
@@ -116,19 +117,15 @@ def handle_callbacks(call):
         log_order(call.from_user, service_name)
 
     elif call.data == "probe_menu":
-        if not works_probe and cid not in ADMINS:
-            bot.answer_callback_query(call.id, "Пробив номеров временно отключен.", show_alert=True)
-            return
         bot.answer_callback_query(call.id)
-        msg = bot.send_message(cid, "Введите номер телефона для пробива (только цифры, без +):")
-        bot.register_next_step_handler(msg, process_probe)
+        bot.send_message(cid, "Введите номер телефона для пробива (только цифры, без +):")
+        bot.register_next_step_handler_by_chat_id(cid, process_probe)
 
     elif call.data == "back":
         start(call.message)
 
     elif call.data == "admin_menu" and cid in ADMINS:
         status_text = "ВЫКЛ" if not works_bot else "ВКЛ"
-        probe_status_text = "ВКЛ" if works_probe else "ВЫКЛ"
         kb = types.InlineKeyboardMarkup(row_width=2)
         kb.add(
             types.InlineKeyboardButton("📥 Заказы", callback_data="view_orders"),
@@ -136,8 +133,7 @@ def handle_callbacks(call):
             types.InlineKeyboardButton("❌ Удалить админа", callback_data="remove_admin"),
             types.InlineKeyboardButton("🔒 Заблокировать пользователя", callback_data="block_user"),
             types.InlineKeyboardButton("🔓 Разблокировать пользователя", callback_data="unblock_user"),
-            types.InlineKeyboardButton(f"⚙️ Бот {status_text}", callback_data="toggle_bot"),
-            types.InlineKeyboardButton(f"📞 Пробив {probe_status_text}", callback_data="toggle_probe")
+            types.InlineKeyboardButton(f"⚙️ Бот {status_text}", callback_data="toggle_bot")
         )
         bot.edit_message_text("🔐 Админ меню:", cid, call.message.message_id, reply_markup=kb)
 
@@ -168,28 +164,7 @@ def handle_callbacks(call):
             types.InlineKeyboardButton("❌ Удалить админа", callback_data="remove_admin"),
             types.InlineKeyboardButton("🔒 Заблокировать пользователя", callback_data="block_user"),
             types.InlineKeyboardButton("🔓 Разблокировать пользователя", callback_data="unblock_user"),
-            types.InlineKeyboardButton(f"⚙️ Бот {status_text}", callback_data="toggle_bot"),
-            types.InlineKeyboardButton(f"📞 Пробив {'ВКЛ' if works_probe else 'ВЫКЛ'}", callback_data="toggle_probe")
-        )
-        bot.edit_message_reply_markup(cid, call.message.message_id, reply_markup=kb)
-
-    elif call.data == "toggle_probe" and cid in ADMINS:
-        works_probe = not works_probe
-        status = "включен" if works_probe else "выключен"
-        bot.answer_callback_query(call.id, f"Пробив номеров теперь {status}.", show_alert=True)
-
-        # Обновляем админ меню если открыто
-        status_text = "ВЫКЛ" if not works_bot else "ВКЛ"
-        probe_status_text = "ВКЛ" if works_probe else "ВЫКЛ"
-        kb = types.InlineKeyboardMarkup(row_width=2)
-        kb.add(
-            types.InlineKeyboardButton("📥 Заказы", callback_data="view_orders"),
-            types.InlineKeyboardButton("➕ Выдать админа", callback_data="add_admin"),
-            types.InlineKeyboardButton("❌ Удалить админа", callback_data="remove_admin"),
-            types.InlineKeyboardButton("🔒 Заблокировать пользователя", callback_data="block_user"),
-            types.InlineKeyboardButton("🔓 Разблокировать пользователя", callback_data="unblock_user"),
-            types.InlineKeyboardButton(f"⚙️ Бот {status_text}", callback_data="toggle_bot"),
-            types.InlineKeyboardButton(f"📞 Пробив {probe_status_text}", callback_data="toggle_probe")
+            types.InlineKeyboardButton(f"⚙️ Бот {status_text}", callback_data="toggle_bot")
         )
         bot.edit_message_reply_markup(cid, call.message.message_id, reply_markup=kb)
 
@@ -256,7 +231,7 @@ def process_remove_admin(message):
             ADMINS.remove(rem_id)
             bot.send_message(message.chat.id, f"❌ {rem_id} удален из админов.")
         else:
-            bot.send_message(message.chat.id, f"⚠️ {rem_id} не найден среди админов.")
+            bot.send_message(message.chat.id, "⚠️ {rem_id} не найден среди админов.")
     except:
         bot.send_message(message.chat.id, "❌ Неверный ID.")
 
@@ -330,7 +305,7 @@ def process_probe(message):
         timezone = "GMT+2"
         local_time = "12:00"
         operator = "Киевстар"
-        validity = "Неизвестно"
+        validity = "Да"
     elif phone.startswith("7"):  # Россия
         country = "Россия"
         region = "Московская область"
@@ -340,7 +315,7 @@ def process_probe(message):
         timezone = "GMT+3"
         local_time = "13:00"
         operator = "МТС"
-        validity = "Неизвестно"
+        validity = "Да"
     else:
         bot.send_message(message.chat.id, "⚠️ Поддерживаются только номера из Украины (+380) и России (+7).")
         return
@@ -365,7 +340,8 @@ Telegram: tg://resolve?phone={full_phone}
 WhatsApp: https://wa.me/{phone}
 Viber: viber://chat?number={full_phone}
 """
-    bot.send_message(message.chat.id, response, disable_web_page_preview=True)
+    bot.send_message(message.chat.id, response)
+
 
 print("🤖 Бот запущен")
 bot.infinity_polling()
