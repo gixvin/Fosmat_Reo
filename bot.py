@@ -18,8 +18,12 @@ USERS_FILE = "users.json"
 
 def load_users():
     if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            return set(json.load(f))
+        try:
+            with open(USERS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return set(data) if isinstance(data, list) else set()
+        except Exception:
+            return set()
     return set()
 
 def save_users(users):
